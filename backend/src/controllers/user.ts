@@ -1,12 +1,14 @@
 import { TryCatch } from "../utils/TryCatch.js";
 import sanitize from "mongo-sanitize";
-import { registerSchema } from "../utils/zod.js";
+import { loginSchema, registerSchema } from "../utils/zod.js";
 import { redisClient } from "../config/redis.js";
 import { User } from "../models/User.js";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 import { sendMail } from "../utils/sendMail.js";
-import { getVerifyEmailHtml } from "../templates/html.js";
+import { getOtpHtml, getVerifyEmailHtml } from "../templates/html.js";
+import jwt from "jsonwebtoken";
+import { generateToken } from "../utils/generateToken.js";
 
 export const registerUser = TryCatch(async(req, res) => {
   const santizeBody = sanitize(req.body);
@@ -14,7 +16,7 @@ export const registerUser = TryCatch(async(req, res) => {
 
   if (!validation.success) {
     const zodError = validation.error;
-    let firstErrorMessage = "Validation failed"    ;
+    let firstErrorMessage = "Validation failed";
     let allErrors: any[] = [];
     if (zodError.issues && Array.isArray(zodError.issues)) {
       allErrors = zodError.issues.map((issue) => ({
@@ -22,13 +24,12 @@ export const registerUser = TryCatch(async(req, res) => {
         message: issue.message || "Validation error",
         code: issue.code
       }));
-      firstErrorMessage = allErrors[0]?.message || "Validation Error"
+      firstErrorMessage = allErrors[0]?.message || firstErrorMessage
     }
-    res.status(400).json({
+    return res.status(400).json({
       name: firstErrorMessage,
       message: allErrors
     });
-    return;
   }
 
   const {name, email, password} = validation.data;
@@ -62,7 +63,7 @@ export const registerUser = TryCatch(async(req, res) => {
   });
 
   const subject = "Verify your email for account creating";
-  const html = getVerifyEmailHtml({email, token: verifyToken});
+  const html = getVerifyEmailHtml({email, token: verifyToken}); 
 
   await sendMail({email, subject, html});
 
@@ -114,5 +115,114 @@ export const verifyUser = TryCatch(async(req, res) => {
       name: newUser.name,
       email: newUser.email
     }
+  });
+});
+
+export const loginUser = TryCatch(async(req, res)=>{
+  const sanitizeBody = sanitize(req.body);
+  const validation = loginSchema.safeParse(sanitizeBody);
+  
+  if (!validation.success) {
+    const zodError = validation.error;
+    let allErrors: any[] = [];
+    let firstErrorMessage = "Validation error";
+    if (zodError.issues && Array.isArray(zodError.issues)) {
+      allErrors = zodError.issues.map((issue)=>({
+        field: issue.path ? issue.path.join(".") : "unknown",
+        message: issue.message || "Validation error",
+        code: issue.code
+      }));
+      firstErrorMessage = allErrors[0]?.message || firstErrorMessage;
+    }
+    return res.status(400).json({
+      name: firstErrorMessage,
+      message: allErrors
+    });
+  }
+
+  const {email, password} = validation.data;
+
+  const rateLimitKey = `login-rate-limit:${req.ip}:${email}`
+  if (await redisClient.get(rateLimitKey)) {
+    return res.status(429).json({
+      message: "Too many request, try again later"
+    });
+  }
+
+  const user = await User.findOne({
+    email
+  });
+
+  if (!user) {
+    return res.status(400).json({
+      message: "Please enter valid crendials",
+    });
+  }
+
+  const matchPassword = await bcrypt.compare(password, user?.password as string);
+  if (!matchPassword) {
+    return res.status(400).json({
+      message: "Please enter valid crendials",
+    });
+  }
+
+  const otp = Math.floor(100000 + Math.random() * 90000).toString();
+  const otpKey = `otp:${email}`;
+
+  await redisClient.set(otpKey, JSON.stringify(otp), {EX: 300});
+
+  const subject = `Otp for verification`;
+  const html = getOtpHtml({email, otp})
+
+  await sendMail({email, subject, html});
+
+  await redisClient.set(rateLimitKey, "true", {EX: 60});
+
+  return res.json({
+    message: "If your email is valid, an otp has been sent. It will expires in 5 minutes",
+  });
+});
+
+export const verifyOtp = TryCatch(async(req, res)=>{
+  const {email, otp} = req.body;
+
+  if (!email || !otp) {
+    return res.status(400).json({
+      message: "Please provide all details"
+    })
+  }
+  
+  const otpKey = `otp:${email}`;
+
+  const storedOtpString = await redisClient.get(otpKey);
+
+  if (!storedOtpString) {
+    return res.status(400).json({
+      message: "otp expired"
+    })
+  }
+  
+  const storedOtp = JSON.parse(storedOtpString);
+  if (storedOtp !== otp) {
+    return res.status(400).json({
+      message: "Invalid otp"
+    })
+  }
+
+  await redisClient.del(otpKey);
+
+  let user = await User.findOne({email});
+
+  if (!user) {
+    return res.status(404).json({
+      message: "User not found"
+    });
+  }
+
+  const tokenData = await generateToken(user._id.toString(), res);
+
+  res.json({
+    message: `Welcome ${user.name}`,
+    user
   });
 })

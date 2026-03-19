@@ -30,5 +30,6 @@ export async function connectToRedis() {
     await redisClient.connect()
   } catch(error) {
     console.error("❌ Failed to connect to Redis:", error);
+    process.exit(1);
   }
 }

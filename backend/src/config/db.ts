@@ -11,16 +11,15 @@ export async function connectToDb() {
     console.log("Db url not found");
     return;
   }
-  mongoose
-    .connect(url, {
+  try {
+    await mongoose.connect(url, {
       dbName: "MERNAuth",
       serverSelectionTimeoutMS: 5000,
       family: 4
     })
-    .then(()=>{
-      console.log("✅ Connected to db successfully");
-    })
-    .catch(()=>{
-      console.log("❌ Failed to connect to db");
-    });
+    console.log("✅ Connected to db successfully");
+  } catch(error) {
+    console.error("❌ Fail to connect to mongo server with error:\n", error);
+    process.exit(1);
+  }
 }
