@@ -210,7 +210,7 @@ export const getVerifyEmailHtml = ({ email, token }: getVerifyEmail) => {
   const appName = process.env.APP_NAME || "Authentication App"; 
   const baseUrl = process.env.FRONTEND_URL || "http://localhost:5173"; 
  
-  const verifyUrl = `${baseUrl.replace(/\/+$/, "")}/token/${encodeURIComponent( 
+  const verifyUrl = `${baseUrl.replace(/\/+$/, "")}/verify/${encodeURIComponent( 
     token 
   )}`; 
  

@@ -1,7 +1,8 @@
-import type { NextFunction, Request, RequestHandler, Response } from "express";
+import type { NextFunction, RequestHandler, Response } from "express";
+import type { AuthRequest } from "../middleware/isAuth.js";
 
 export const TryCatch = (
-  handler: (req: Request, res: Response, next: NextFunction) => Promise<any>
+  handler: (req: AuthRequest, res: Response, next: NextFunction) => Promise<any>
 ): RequestHandler => (
   async(req, res, next) => {
     try {

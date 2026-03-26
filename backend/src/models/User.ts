@@ -4,7 +4,7 @@ export interface UserSchema extends Document{
   name: string;
   email: string;
   password: string;
-  role: string;
+  role: "user" | "admin";
   createdAt: string;
   updatedAt: string;
 }

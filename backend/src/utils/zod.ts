@@ -10,3 +10,8 @@ export const loginSchema = z.object({
   email: z.string().check(z.email({message: "Please enter the valid email format"})),
   password: z.string().min(8, "Please enter the valid password")
 });
+
+export const otpSchema = z.object({
+  email: z.string().check(z.email({message: "Invalid email format"})),
+  otp: z.string().min(6, "Please enter valid otp")
+})
